@@ -1,10 +1,10 @@
 import json
-import pandas as pd
+import numpy as np
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.model_selection import train_test_split
-from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import f1_score
-from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.neural_network import MLPClassifier
+from sklearn.impute import SimpleImputer
 
 
 def preprocess_data(file_path):
@@ -16,44 +16,34 @@ def preprocess_data(file_path):
 def extract_features(data):
     features = []
     labels = []
+    ecoscore_values = []
 
     for product_id, product_data in data.items():
         product_features = {
-            'is_beverage': product_data['is_beverage'],
-            'packaging_materials': product_data['packaging_materials'],
             'est_co2_agriculture': product_data['est_co2_agriculture'],
-            'est_co2_distribution': product_data['est_co2_distribution'],
-            'est_co2_packaging': product_data['est_co2_packaging'],
             'est_co2_processing': product_data['est_co2_processing'],
+            'est_co2_distribution': product_data['est_co2_distribution'],
             'est_co2_transportation': product_data['est_co2_transportation'],
-            'nutrition_grade': product_data['nutrition_grade'],
-            'additives_count': product_data['additives_count'],
-            'calcium_100g': product_data['calcium_100g'],
-            'carbohydrates_100g': product_data['carbohydrates_100g'],
-            'fat_100g': product_data['fat_100g'],
-            'fiber_100g': product_data['fiber_100g'],
-            'proteins_100g': product_data['proteins_100g'],
-            'salt_100g': product_data['salt_100g'],
-            'sodium_100g': product_data['sodium_100g'],
-            'sugars_100g': product_data['sugars_100g'],
+            'est_co2_packaging': product_data['est_co2_packaging'],
+            'est_co2_consumption': product_data['est_co2_consumption'],
+            'non_recyclable_and_non_biodegradable_materials_count': product_data[
+                'non_recyclable_and_non_biodegradable_materials_count']
         }
-
-        # Handle ingredient_origins using one-hot encoding
-        if 'ingredient_origins' in product_data:
-            ingredient_origins = product_data['ingredient_origins']
-            mlb = MultiLabelBinarizer()
-            ingredient_origins_encoded = mlb.fit_transform([ingredient_origins.keys()])
-            for i, origin in enumerate(mlb.classes_):
-                product_features[f'origin_{origin}'] = ingredient_origins_encoded[0][i]
 
         features.append(product_features)
 
         if 'ecoscore_grade' in product_data:
+            ecoscore_values.append(product_data['ecoscore_grade'])
             labels.append(product_data['ecoscore_grade'])
         else:
-            labels.append(None)  # or handle the missing value in an appropriate way
+            labels.append(None)  # Handle the missing value in an appropriate way
 
     return features, labels
+
+
+def create_model(hidden_layer_sizes=(100, 100), alpha=0.01):
+    model = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes, alpha=alpha, random_state=42, early_stopping=True)
+    return model
 
 
 def train_model(features, labels):
@@ -63,27 +53,33 @@ def train_model(features, labels):
 
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    model = MLPClassifier(max_iter=500)  # Increase max_iter value to 500
+    # Set the desired hyperparameters
+    hidden_layer_sizes = (100, 100)
+    alpha = 0.01
+
+    model = create_model(hidden_layer_sizes, alpha)
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_val)
-    f1_macro = f1_score(y_val, y_pred, average='macro')
+    f1_macro_val = f1_score(y_val, y_pred, average='macro')
 
-    return model, vectorizer, f1_macro
+    print(f1_macro_val)
+
+    return model, vectorizer, f1_macro_val
 
 
 # Preprocess the training data
 train_data = preprocess_data('train_products.json')
 train_features, train_labels = extract_features(train_data)
 
-# Train the MLPClassifier model
-model, vectorizer, f1_macro = train_model(train_features, train_labels)
+# Train the MLP model with hyperparameter search
+model, vectorizer, f1_macro_val = train_model(train_features, train_labels)
 
 # Preprocess the test data
 test_data = preprocess_data('test_products.json')
 test_features, _ = extract_features(test_data)
 
-# Generate predictions using the MLPClassifier model
+# Generate predictions using the MLP model
 predictions_dict = {}
 
 X_test = vectorizer.transform(test_features)
